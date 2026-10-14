@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Автономная машина 1:10</title>
+<meta name="description" content="Учебный проект: модель машины 1:10, которая продолжает маршрут при потере связи и GPS">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;750&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDF0F2; --surface:#F8FAFB; --ink:#18222D; --muted:#5D6B78; --line:#CBD3DA;
+  --mark:#F2C230; --ok:#2A9D6F; --link:#D9821B; --odo:#6A5ACD; --stop:#D1453B;
+  --ground:#DFE5E9; --block:#C9D2D9; --path:#F7F9FA; --fence:#8B98A5;
+  --focus:#1D6FB8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#141A20; --surface:#1B232B; --ink:#E5EAEE; --muted:#9AA7B3; --line:#33404C;
+    --mark:#E8B923; --ok:#3DBA88; --link:#EF9B35; --odo:#8F82EA; --stop:#EC6157;
+    --ground:#1F2830; --block:#2C3741; --path:#3A4651; --fence:#6E7C89; --focus:#6FB2F0;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141A20; --surface:#1B232B; --ink:#E5EAEE; --muted:#9AA7B3; --line:#33404C;
+  --mark:#E8B923; --ok:#3DBA88; --link:#EF9B35; --odo:#8F82EA; --stop:#EC6157;
+  --ground:#1F2830; --block:#2C3741; --path:#3A4651; --fence:#6E7C89; --focus:#6FB2F0;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.55 Onest,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;font-size:.88em}
+
+header.top{border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:14px;padding-bottom:14px}
+.brand{font-weight:600;display:flex;align-items:center;gap:10px}
+.brand svg{flex:none}
+nav ul{list-style:none;margin:0;padding:0;display:flex;gap:18px;flex-wrap:wrap}
+nav a{text-decoration:none;color:var(--muted);font-size:15px}
+nav a:hover{color:var(--ink)}
+
+.hero{padding:44px 0 18px}
+.hero h1{font-size:clamp(34px,5.4vw,60px);line-height:1.02;letter-spacing:-.025em;font-weight:750;margin:0 0 14px;max-width:15ch}
+.hero p{margin:0;color:var(--muted);font-size:18px;max-width:62ch}
+
+/* ---- симулятор */
+.sim{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;margin:26px 0 8px}
+.stage{position:relative;background:var(--ground);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.stage canvas{display:block;width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;padding:10px 14px;border-top:1px solid var(--line);background:var(--surface);font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:18px;height:4px;border-radius:2px;display:inline-block}
+.panel{display:flex;flex-direction:column;gap:14px}
+.status{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.status dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:9px 12px;font-size:15px}
+.status dt{color:var(--muted)}
+.status dd{margin:0;font-weight:500;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--muted)}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.controls button{font:500 14px/1.2 Onest,system-ui,sans-serif;padding:11px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;text-align:left}
+.controls button:hover:not(:disabled){border-color:var(--ink)}
+.controls button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.controls button:disabled{opacity:.45;cursor:not-allowed}
+.controls .wide{grid-column:1/-1}
+.log{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:13.5px;max-height:210px;overflow:auto}
+.log h3{margin:0 0 6px;font-size:13px;color:var(--muted);font-weight:500}
+.log ol{list-style:none;margin:0;padding:0}
+.log li{padding:5px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:44px 1fr;gap:6px}
+.log li:first-child{border-top:0}
+.log time{color:var(--muted);font-variant-numeric:tabular-nums}
+.note{font-size:13px;color:var(--muted);margin:6px 0 0}
+
+/* ---- разделы */
+section.block{padding:56px 0 8px}
+section.block h2{font-size:clamp(26px,3.2vw,36px);letter-spacing:-.015em;line-height:1.1;margin:0 0 10px;font-weight:700}
+section.block > .wrap > p.lead{color:var(--muted);max-width:68ch;margin:0 0 24px;font-size:17px}
+
+.device{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:28px;align-items:start}
+.device svg{width:100%;height:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.parts{list-style:none;margin:0;padding:0;counter-reset:p}
+.parts li{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:9px 8px;border-radius:10px;cursor:default}
+.parts li b{font-weight:600}
+.parts li span{display:block;color:var(--muted);font-size:14.5px}
+.parts .num{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:12.5px;font-weight:600;display:grid;place-items:center;margin-top:1px}
+.parts li.hl{background:color-mix(in srgb,var(--mark) 28%,transparent)}
+.marker circle{fill:var(--ink)}
+.marker text{fill:var(--paper);font:600 13px Onest,system-ui,sans-serif}
+.marker.hl circle{fill:var(--mark)}
+.marker.hl text{fill:#18222D}
+.marker{cursor:default}
+
+.tbl{width:100%;border-collapse:collapse;font-size:15px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.tbl th,.tbl td{text-align:left;vertical-align:top;padding:11px 14px;border-top:1px solid var(--line)}
+.tbl thead th{border-top:0;font-weight:600;font-size:14px;color:var(--muted);background:var(--paper)}
+.tbl td.r,.tbl th.r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tbl tfoot td{font-weight:650;background:var(--paper)}
+.tbl .sub{color:var(--muted);font-size:14px}
+.scroll{overflow-x:auto;border-radius:14px}
+.scroll .tbl{min-width:640px}
+.tag{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:1px}
+
+.timeline{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;counter-reset:st}
+.timeline li{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 14px 56px;position:relative;counter-increment:st}
+.timeline li::before{content:counter(st);position:absolute;left:14px;top:13px;width:28px;height:28px;border-radius:8px;background:var(--mark);color:#18222D;font-weight:700;display:grid;place-items:center;font-size:14px}
+.timeline b{display:block;font-weight:600}
+.timeline .when{color:var(--muted);font-size:13.5px}
+.timeline p{margin:6px 0 0;font-size:14.5px}
+
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px}
+.steps h3{margin:0 0 8px;font-size:18px}
+.steps ol{margin:0;padding-left:20px}
+.steps li{margin:0 0 7px;font-size:15px}
+
+.sec{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0;border-top:1px solid var(--line)}
+.sec div{padding:16px 18px 16px 0;border-bottom:1px solid var(--line)}
+.sec b{display:block;margin-bottom:3px}
+.sec span{color:var(--muted);font-size:15px}
+
+footer{margin-top:64px;border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);font-size:14px}
+footer p{margin:0 0 6px;max-width:80ch}
+
+@media (max-width:900px){
+  .sim{grid-template-columns:1fr}
+  .device{grid-template-columns:1fr}
+  nav{display:none}
+}
+@media (max-width:640px){
+  .scroll .tbl{min-width:0}
+  .tbl thead{display:none}
+  .tbl tr{display:block;border-top:1px solid var(--line);padding:10px 14px}
+  .tbl tbody tr:first-child{border-top:0}
+  .tbl td{display:block;border:0;padding:2px 0}
+  .tbl td.r{text-align:left;font-weight:600}
+}
+@media (max-width:520px){
+  .wrap{padding:0 16px}
+  .hero{padding-top:28px}
+  .hero p{font-size:16px}
+  .controls{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="brand">
+    <svg width="28" height="20" viewBox="0 0 28 20" aria-hidden="true"><rect x="3" y="4" width="22" height="12" rx="3" fill="currentColor"/><rect x="5" y="0" width="6" height="4" rx="1" fill="currentColor"/><rect x="17" y="0" width="6" height="4" rx="1" fill="currentColor"/><rect x="5" y="16" width="6" height="4" rx="1" fill="currentColor"/><rect x="17" y="16" width="6" height="4" rx="1" fill="currentColor"/></svg>
+    Автономная машина 1:10
+  </div>
+  <nav aria-label="Разделы"><ul>
+    <li><a href="#device">Устройство</a></li>
+    <li><a href="#behavior">Реакции</a></li>
+    <li><a href="#cost">Смета</a></li>
+    <li><a href="#plan">План</a></li>
+    <li><a href="#build">Сборка</a></li>
+    <li><a href="#security">Защита</a></li>
+  </ul></nav>
+</div></header>
+
+<main>
+<div class="wrap hero">
+  <h1>Машина, которая доезжает сама</h1>
+  <p>Учебная модель 1:10. Пока есть связь, ею управляет оператор. Пропал пульт — она продолжает маршрут. Пропал GPS — считает путь по колёсам и компасу. Попробуйте сами: отключайте пульт, глушите GPS, ставьте препятствия.</p>
+
+  <div class="sim" id="sim">
+    <div class="stage">
+      <canvas id="map" width="1000" height="600" aria-label="Карта: маршрут машины от склада до получателя"></canvas>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--mark)"></i>маршрут</span>
+        <span><i class="sw" style="background:var(--ok)"></i>путь по GPS</span>
+        <span><i class="sw" style="background:var(--odo)"></i>путь по колёсам и компасу</span>
+        <span><i class="sw" style="background:var(--fence);height:2px"></i>геозона</span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="status" aria-live="polite">
+        <dl>
+          <dt>Режим</dt><dd><i class="dot" id="dMode"></i><span id="vMode">—</span></dd>
+          <dt>Пульт</dt><dd><i class="dot" id="dRc"></i><span id="vRc">—</span></dd>
+          <dt>Навигация</dt><dd><i class="dot" id="dNav"></i><span id="vNav">—</span></dd>
+          <dt>Скорость</dt><dd><span id="vSpeed">—</span></dd>
+          <dt>Ошибка</dt><dd><span id="vErr">—</span></dd>
+          <dt>Маршрут</dt><dd><span id="vProg">—</span></dd>
+        </dl>
+      </div>
+      <div class="controls">
+        <button id="bRc" aria-pressed="false">Выключить пульт</button>
+        <button id="bGps" aria-pressed="false">Заглушить GPS</button>
+        <button id="bObs">Поставить препятствие</button>
+        <button id="bTake">Взять управление</button>
+        <button id="bPlay" class="wide">Пауза</button>
+        <button id="bReset" class="wide">Начать заново</button>
+      </div>
+      <div class="log"><h3>Журнал бортового диспетчера</h3><ol id="log"></ol></div>
+    </div>
+  </div>
+  <p class="note">Демонстрация упрощена: время ожидания GPS сокращено до 20 с (на машине 60 с), рост ошибки без GPS показан условно.</p>
+</div>
+
+<section class="block" id="device"><div class="wrap">
+  <h2>Устройство</h2>
+  <p class="lead">Вид сверху, перёд справа. Нижний уровень — контроллер с ArduPilot, он работает в реальном времени и отвечает за безопасность. Верхний — Raspberry Pi с Linux и бортовым диспетчером, он принимает решения, когда оператора нет.</p>
+  <div class="device">
+    <svg viewBox="0 0 640 340" role="img" aria-label="Схема машины сверху с расположением компонентов">
+      <g fill="none" stroke="var(--ink)" stroke-width="2">
+        <!-- колёса -->
+        <rect x="118" y="38" width="86" height="40" rx="10" fill="var(--ink)"/>
+        <rect x="118" y="262" width="86" height="40" rx="10" fill="var(--ink)"/>
+        <rect x="430" y="38" width="86" height="40" rx="10" fill="var(--ink)"/>
+        <rect x="430" y="262" width="86" height="40" rx="10" fill="var(--ink)"/>
+        <!-- рама и площадка -->
+        <path d="M70 120 Q70 84 106 84 H520 Q566 84 574 130 L580 170 L574 210 Q566 256 520 256 H106 Q70 256 70 220 Z" fill="var(--paper)"/>
+        <rect x="150" y="98" width="330" height="144" rx="10" stroke-dasharray="6 5" stroke="var(--muted)"/>
+        <!-- кардан -->
+        <line x1="160" y1="170" x2="470" y2="170" stroke="var(--muted)" stroke-width="3"/>
+        <!-- аккумулятор под площадкой -->
+        <rect x="236" y="196" width="122" height="30" rx="5" stroke="var(--muted)" stroke-dasharray="3 4"/>
+        <!-- стойка GPS -->
+        <circle cx="120" cy="170" r="24" stroke="var(--ink)"/>
+        <!-- антенна приёмника -->
+        <line x1="318" y1="252" x2="318" y2="300" stroke="var(--muted)"/>
+        <!-- луч дальномера -->
+        <path d="M566 170 L632 150 L632 190 Z" fill="var(--mark)" stroke="none" opacity=".55"/>
+      </g>
+      <text x="246" y="216" font-size="11" fill="var(--muted)" font-family="Onest,system-ui,sans-serif">аккумулятор (под площадкой)</text>
+      <g id="markers">
+        <g class="marker" data-i="0" tabindex="0" role="button" aria-label="Лазерный дальномер"><circle cx="548" cy="170" r="13"/><text x="548" y="174.5" text-anchor="middle">1</text></g>
+        <g class="marker" data-i="1" tabindex="0" role="button" aria-label="Камера"><circle cx="512" cy="132" r="13"/><text x="512" y="136.5" text-anchor="middle">2</text></g>
+        <g class="marker" data-i="2" tabindex="0" role="button" aria-label="Сервопривод руля"><circle cx="452" cy="170" r="13"/><text x="452" y="174.5" text-anchor="middle">3</text></g>
+        <g class="marker" data-i="3" tabindex="0" role="button" aria-label="Контроллер автопилота"><circle cx="300" cy="170" r="13"/><text x="300" y="174.5" text-anchor="middle">4</text></g>
+        <g class="marker" data-i="4" tabindex="0" role="button" aria-label="Приёмник ELRS"><circle cx="318" cy="238" r="13"/><text x="318" y="242.5" text-anchor="middle">5</text></g>
+        <g class="marker" data-i="5" tabindex="0" role="button" aria-label="GPS и компас на стойке"><circle cx="120" cy="170" r="13"/><text x="120" y="174.5" text-anchor="middle">6</text></g>
+        <g class="marker" data-i="6" tabindex="0" role="button" aria-label="Raspberry Pi Zero 2 W"><circle cx="205" cy="118" r="13"/><text x="205" y="122.5" text-anchor="middle">7</text></g>
+        <g class="marker" data-i="7" tabindex="0" role="button" aria-label="Преобразователь 5 В"><circle cx="205" cy="222" r="13"/><text x="205" y="226.5" text-anchor="middle">8</text></g>
+        <g class="marker" data-i="8" tabindex="0" role="button" aria-label="Регулятор хода"><circle cx="392" cy="222" r="13"/><text x="392" y="226.5" text-anchor="middle">9</text></g>
+        <g class="marker" data-i="9" tabindex="0" role="button" aria-label="Энкодер на кардане"><circle cx="392" cy="118" r="13"/><text x="392" y="122.5" text-anchor="middle">10</text></g>
+      </g>
+    </svg>
+    <ol class="parts" id="parts">
+      <li data-i="0"><i class="num">1</i><div><b>Лазерный дальномер</b><span>Видит препятствие впереди, до 8 м</span></div></li>
+      <li data-i="1"><i class="num">2</i><div><b>Камера</b><span>Видео оператору, основа для компьютерного зрения</span></div></li>
+      <li data-i="2"><i class="num">3</i><div><b>Сервопривод руля</b><span>Поворачивает передние колёса</span></div></li>
+      <li data-i="3"><i class="num">4</i><div><b>Контроллер автопилота</b><span>ArduPilot: курс, скорость, маршрут, реакции на отказы</span></div></li>
+      <li data-i="4"><i class="num">5</i><div><b>Приёмник ELRS</b><span>Связь с пультом; обрыв виден сразу</span></div></li>
+      <li data-i="5"><i class="num">6</i><div><b>GPS и компас на стойке</b><span>Координаты и курс, подальше от мотора</span></div></li>
+      <li data-i="6"><i class="num">7</i><div><b>Raspberry Pi Zero 2 W</b><span>Linux и бортовой диспетчер</span></div></li>
+      <li data-i="7"><i class="num">8</i><div><b>Преобразователь 5 В</b><span>Отдельное питание бортового компьютера</span></div></li>
+      <li data-i="8"><i class="num">9</i><div><b>Регулятор хода</b><span>Управляет мотором по команде автопилота</span></div></li>
+      <li data-i="9"><i class="num">10</i><div><b>Энкодер на кардане</b><span>Считает пройденный путь — навигация без GPS</span></div></li>
+    </ol>
+  </div>
+</div></section>
+
+<section class="block" id="behavior"><div class="wrap">
+  <h2>Что делает машина, когда нас нет</h2>
+  <p class="lead">Часть реакций настроена в автопилоте ArduPilot, часть выполняет бортовой диспетчер. Главное правило: маршрут продолжается при потере связи и GPS, но перед препятствием, на границе геозоны и по аварийному стопу машина всегда останавливается.</p>
+  <div class="scroll"><table class="tbl">
+    <thead><tr><th>Ситуация</th><th>Как замечает</th><th>Что делает</th></tr></thead>
+    <tbody>
+      <tr><td><b>Всё в норме, режим «Ручной»</b></td><td class="sub">—</td><td>Едет по командам с пульта</td></tr>
+      <tr><td><b>Всё в норме, режим «Авто»</b></td><td class="sub">—</td><td>Едет по маршруту по GPS со скоростью 2 м/с</td></tr>
+      <tr><td><b>Пропала связь с пультом</b></td><td class="sub">Приёмник ELRS перестаёт выдавать сигнал дольше 1,5 с</td><td>В «Авто» продолжает маршрут. В «Ручном» останавливается, через 2 с диспетчер включает «Авто», и машина едет по маршруту с ближайшей точки</td></tr>
+      <tr><td><b>Пропала телеметрия (Wi-Fi до ноутбука)</b></td><td class="sub">Нет сигналов от наземной станции</td><td>Продолжает маршрут</td></tr>
+      <tr><td><b>GPS пропал или заглушён</b></td><td class="sub">Нет 3D-фиксации, мало спутников или большой HDOP дольше 2 с</td><td>Переходит на счисление пути: энкодер колеса + гироскоп + компас. Скорость снижается до 1 м/с</td></tr>
+      <tr><td><b>GPS подменён (координаты «врут»)</b></td><td class="sub">Скорость по GPS расходится со скоростью по колёсам больше чем на 1,5 м/с</td><td>Перестаёт доверять GPS и тоже переходит на счисление пути</td></tr>
+      <tr><td><b>Без GPS слишком долго (&gt; 60 с)</b></td><td class="sub">Таймер диспетчера</td><td>Останавливается и ждёт, пока GPS вернётся, затем продолжает маршрут</td></tr>
+      <tr><td><b>Препятствие ближе 1 м</b></td><td class="sub">Лазерный дальномер</td><td>Останавливается; когда путь свободен 2 с — едет дальше</td></tr>
+      <tr><td><b>Выезд за геозону</b></td><td class="sub">Контроллер сравнивает положение с границей</td><td>Останавливается</td></tr>
+      <tr><td><b>Перевернулась или застряла</b></td><td class="sub">Контроллер видит, что мотор крутит, а машина не движется</td><td>Останавливается</td></tr>
+      <tr><td><b>Связь вернулась</b></td><td class="sub">Сигнал пульта снова есть</td><td>Продолжает текущую задачу; оператор может в любой момент взять управление тумблером режима</td></tr>
+    </tbody>
+  </table></div>
+</div></section>
+
+<section class="block" id="cost"><div class="wrap">
+  <h2>Смета: 29&nbsp;600&nbsp;₽ из 30&nbsp;000</h2>
+  <p class="lead">Цены ориентировочные для российских магазинов на октябрь 2026 года, разброс ±20&nbsp;%. Программы — ArduPilot, Mission Planner, симулятор SITL, Raspberry Pi OS — бесплатные.</p>
+  <div class="scroll"><table class="tbl">
+    <thead><tr><th>Компонент</th><th>Пример</th><th class="r">Цена</th></tr></thead>
+    <tbody>
+      <tr><td><b>Шасси 1:10 4WD, готовое к езде (RTR)</b><div class="sub">Корпус, колёса, мотор, регулятор хода, руль, аккумулятор и зарядка в комплекте</div></td><td class="sub">Remo Hobby, ZD Racing, WLtoys 1:10 — с отдельными регулятором хода и сервоприводом руля</td><td class="r">8&nbsp;000&nbsp;₽</td></tr>
+      <tr><td><b>Контроллер автопилота</b><div class="sub">«Мозг» нижнего уровня: держит курс, едет по точкам, реагирует на отказы</div></td><td class="sub">SpeedyBee F405 Wing (прошивка ArduPilot)</td><td class="r">4&nbsp;500&nbsp;₽</td></tr>
+      <tr><td><b>GPS-модуль с компасом</b><div class="sub">Координаты и курс</div></td><td class="sub">Matek M10Q-5883</td><td class="r">2&nbsp;800&nbsp;₽</td></tr>
+      <tr><td><b>Пульт ELRS 2,4 ГГц</b><div class="sub">Ручное управление, переключение режимов, аварийный стоп</div></td><td class="sub">RadioMaster Pocket ELRS или BetaFPV LiteRadio 3 ELRS</td><td class="r">5&nbsp;000&nbsp;₽</td></tr>
+      <tr><td><b>Приёмник ELRS</b><div class="sub">Связь с пультом; при обрыве контроллер сразу видит потерю сигнала</div></td><td class="sub">RadioMaster RP1 / BetaFPV ELRS Nano</td><td class="r">900&nbsp;₽</td></tr>
+      <tr><td><b>Бортовой компьютер</b><div class="sub">Linux, бортовой диспетчер, камера, телеметрия по Wi-Fi</div></td><td class="sub">Raspberry Pi Zero 2 W</td><td class="r">2&nbsp;800&nbsp;₽</td></tr>
+      <tr><td><b>Карта памяти microSD 32 ГБ</b><div class="sub">Система для Raspberry Pi</div></td><td class="sub">класс A1</td><td class="r">500&nbsp;₽</td></tr>
+      <tr><td><b>Камера</b><div class="sub">Видео с машины, основа для компьютерного зрения</div></td><td class="sub">модуль OV5647 со шлейфом для Pi Zero</td><td class="r">900&nbsp;₽</td></tr>
+      <tr><td><b>Лазерный дальномер</b><div class="sub">Видит препятствие впереди — машина останавливается</div></td><td class="sub">Benewake TF-Luna (0,2–8 м)</td><td class="r">1&nbsp;900&nbsp;₽</td></tr>
+      <tr><td><b>Энкодер колеса</b><div class="sub">Считает пройденный путь — навигация без GPS</div></td><td class="sub">2 датчика Холла + неодимовые магниты на кардан</td><td class="r">400&nbsp;₽</td></tr>
+      <tr><td><b>Преобразователь 5 В 3 А</b><div class="sub">Отдельное питание для Raspberry Pi</div></td><td class="sub">понижающий DC-DC модуль</td><td class="r">400&nbsp;₽</td></tr>
+      <tr><td><b>Монтажный набор</b><div class="sub">Крепление электроники на шасси</div></td><td class="sub">площадка (оргстекло / 3D-печать), стойки M3, провода, разъёмы XT60 и JST, термоусадка, стяжки, двусторонний скотч</td><td class="r">1&nbsp;500&nbsp;₽</td></tr>
+    </tbody>
+    <tfoot><tr><td>Итого</td><td class="sub">Запас до бюджета: 400&nbsp;₽</td><td class="r">29&nbsp;600&nbsp;₽</td></tr></tfoot>
+  </table></div>
+  <p class="note">При выборе шасси проверьте, что регулятор хода и приёмник — отдельные блоки. Если стоит плата «3 в 1», понадобится отдельный регулятор, около 1&nbsp;000–1&nbsp;500&nbsp;₽.</p>
+</div></section>
+
+<section class="block" id="plan"><div class="wrap">
+  <h2>План: 10–12 недель</h2>
+  <p class="lead">Пока едут детали, всё отлаживается в симуляторе ArduPilot SITL, поэтому первые два этапа идут параллельно.</p>
+  <ol class="timeline">
+    <li><b>Подготовка и симулятор</b><span class="when">1 неделя</span><p>Изучить ArduPilot Rover, поставить Mission Planner и симулятор SITL, прогнать маршрут и все отказы в симуляции</p></li>
+    <li><b>Закупка</b><span class="when">1–3 недели</span><p>Заказать компоненты по смете, пока ждём доставку — продолжать работу в симуляторе</p></li>
+    <li><b>Механика</b><span class="when">3–5 дней</span><p>Снять кузов, сделать площадку для электроники, поставить магниты энкодера на кардан</p></li>
+    <li><b>Электроника</b><span class="when">1 неделя</span><p>Питание, контроллер, GPS на стойке, приёмник, дальномер, Raspberry Pi, камера</p></li>
+    <li><b>Прошивка и калибровка</b><span class="when">2–4 дня</span><p>ArduPilot Rover на контроллер, калибровка акселерометра, компаса, пульта, регулятора хода</p></li>
+    <li><b>Ручное управление и режимы</b><span class="when">2–3 дня</span><p>Настроить тумблеры: режимы, аварийный стоп, включение моторов</p></li>
+    <li><b>Маршрут по GPS</b><span class="when">1 неделя</span><p>Нарисовать маршрут в Mission Planner, настроить руль и скорость, проехать в «Авто»</p></li>
+    <li><b>Потеря связи</b><span class="when">3–5 дней</span><p>Настроить реакцию на обрыв пульта и телеметрии, запустить диспетчер</p></li>
+    <li><b>Потеря навигации</b><span class="when">1 неделя</span><p>Настроить энкодер, два набора источников EKF3, переключение в диспетчере</p></li>
+    <li><b>«ОС» и защита</b><span class="when">1 неделя</span><p>Linux на Raspberry Pi, службы, подпись MAVLink, фаервол, вход по ключу, защищённая файловая система</p></li>
+    <li><b>Препятствия и геозона</b><span class="when">3–5 дней</span><p>Дальномер, остановка перед препятствием, граница района</p></li>
+    <li><b>Испытания и защита проекта</b><span class="when">1 неделя</span><p>Пройти чек-лист испытаний, снять видео, оформить отчёт и сайт</p></li>
+  </ol>
+</div></section>
+
+<section class="block" id="build"><div class="wrap">
+  <h2>Как собрать</h2>
+  <p class="lead">Коротко. Подробные шаги, таблица подключений и параметры — в документе проекта и в папке «ПО».</p>
+  <div class="steps">
+    <div><h3>Механика</h3><ol>
+      <li>Проверить шасси на родном пульте, снять кузов и родной приёмник.</li>
+      <li>Поставить площадку из оргстекла или 3D-печати на штатные стойки кузова.</li>
+      <li>Контроллер — в центр, стрелкой вперёд, на виброгасящий скотч.</li>
+      <li>GPS — на стойку 8–10 см сзади, подальше от мотора.</li>
+      <li>Дальномер и камеру — на передний бампер.</li>
+      <li>Магниты на кардан и два датчика Холла рядом — это энкодер.</li>
+    </ol></div>
+    <div><h3>Электроника</h3><ol>
+      <li>Аккумулятор → силовая плата контроллера → регулятор хода.</li>
+      <li>Руль на выход S1, регулятор хода на S3.</li>
+      <li>Приёмник ELRS, GPS, дальномер, Raspberry Pi — на свои UART-порты.</li>
+      <li>Raspberry Pi — через отдельный преобразователь 5&nbsp;В, общий минус с контроллером.</li>
+      <li>Выключатель питания на корпус.</li>
+    </ol></div>
+    <div><h3>Программы</h3><ol>
+      <li>Прошить ArduPilot Rover через Mission Planner.</li>
+      <li>Загрузить <code>rover-start.param</code>, откалибровать датчики и пульт.</li>
+      <li>Поставить Raspberry Pi OS Lite, MAVProxy и <code>dispatcher.py</code>.</li>
+      <li>Сначала прогнать всё в SITL, потом на подставке, потом на площадке.</li>
+    </ol></div>
+  </div>
+</div></section>
+
+<section class="block" id="security"><div class="wrap">
+  <h2>Защита от взлома</h2>
+  <p class="lead">Абсолютной защиты не бывает. Задача — закрыть типовые пути атаки и сделать так, чтобы взлом бортового компьютера не отключал безопасность: аварийный стоп и геозона работают внутри автопилота.</p>
+  <div class="sec">
+    <div><b>Пульт</b><span>ELRS с уникальной фразой привязки — чужой пульт не подключится.</span></div>
+    <div><b>Команды</b><span>Подпись пакетов MAVLink2: команды без ключа автопилот отклоняет.</span></div>
+    <div><b>Wi-Fi</b><span>WPA2/WPA3, длинный пароль, для удалённого доступа — WireGuard.</span></div>
+    <div><b>Вход в Linux</b><span>Только по SSH-ключу, отдельный пользователь без лишних прав.</span></div>
+    <div><b>Порты</b><span>Фаервол ufw: открыто только SSH и MAVLink с адреса ноутбука.</span></div>
+    <div><b>Файловая система</b><span>Только для чтения: после перезагрузки следы вмешательства исчезают.</span></div>
+    <div><b>Лишнее</b><span>Bluetooth и беспроводной модуль настройки контроллера выключены.</span></div>
+    <div><b>Физически</b><span>Выключатель питания и аварийный стоп на пульте.</span></div>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <p>Испытания — только на пустой площадке, без людей и машин. Глушилки GPS и связи использовать нельзя: потерю связи имитируйте выключением пульта, потерю GPS — в симуляторе или экранированием модуля.</p>
+  <p>Файлы проекта: документ в папке <code>docs</code>, бортовой диспетчер и параметры автопилота в папке <code>software</code>.</p>
+</div></footer>
+
+<script>
+(() => {
+  // ---------------- связь схемы и списка
+  const marks = [...document.querySelectorAll('.marker')];
+  const items = [...document.querySelectorAll('#parts li')];
+  const hl = (i, on) => { marks[i].classList.toggle('hl', on); items[i].classList.toggle('hl', on); };
+  [...marks, ...items].forEach(el => {
+    const i = +el.dataset.i;
+    ['mouseenter','focus'].forEach(e => el.addEventListener(e, () => hl(i, true)));
+    ['mouseleave','blur'].forEach(e => el.addEventListener(e, () => hl(i, false)));
+  });
+
+  // ---------------- симулятор
+  const cv = document.getElementById('map');
+  const ctx = cv.getContext('2d');
+  const W = 1000, H = 600, PX_PER_M = 30;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let C = {};
+  const readColors = () => { C = Object.fromEntries(['--ground','--block','--path','--mark','--ok','--link','--odo','--stop','--ink','--paper','--fence','--muted','--surface'].map(k => [k.slice(2), css(k)])); };
+  readColors();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', readColors);
+
+  const WP = [[90,510],[90,140],[420,140],[420,330],[700,330],[700,110],[910,110],[910,490],[600,490]];
+  const seg = []; let L = 0;
+  for (let i = 1; i < WP.length; i++) { const [x1,y1]=WP[i-1],[x2,y2]=WP[i]; const len=Math.hypot(x2-x1,y2-y1); seg.push({x1,y1,x2,y2,len,s0:L}); L+=len; }
+  const at = s => { s = Math.max(0, Math.min(L, s)); for (const g of seg) if (s <= g.s0 + g.len) { const k=(s-g.s0)/g.len; return {x:g.x1+(g.x2-g.x1)*k, y:g.y1+(g.y2-g.y1)*k, a:Math.atan2(g.y2-g.y1,g.x2-g.x1)}; } const g=seg[seg.length-1]; return {x:g.x2,y:g.y2,a:Math.atan2(g.y2-g.y1,g.x2-g.x1)}; };
+  const wpIndex = s => { let n = 1; for (let i = 0; i < seg.length; i++) if (s >= seg[i].s0 + seg[i].len - 0.5) n = i + 2; return Math.min(n, WP.length); };
+  const blocks = [[130,180,250,110],[130,380,250,90],[460,180,200,110],[460,380,100,80],[740,150,130,300],[200,40,180,60],[520,30,140,50]];
+
+  const DR_LIMIT = 20, GPS_BAD = 2, GPS_GOOD = 3, RC_RESUME = 2;
+  let S;
+  const reset = () => {
+    S = { t:0, s:0, mode:'MANUAL', rc:true, gpsOn:true, nav:'GPS', badT:0, goodT:0, drT:0, rcLostT:null, wasManual:false,
+          drift:{x:0,y:0}, dang:Math.random()*6.28, hold:null, obs:null, obsT:0, trail:[], lastTrail:0, log:[], playing:true, correcting:false };
+    logEl.innerHTML = '';
+    say('Оператор ведёт машину вручную от склада к получателю');
+    syncButtons();
+  };
+  const logEl = document.getElementById('log');
+  const say = msg => {
+    const m = Math.floor(S.t/60), sec = Math.floor(S.t%60);
+    const li = document.createElement('li');
+    li.innerHTML = '<time>' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0') + '</time><span></span>';
+    li.lastChild.textContent = msg;
+    logEl.prepend(li);
+  };
+  const setMode = (m, why) => { if (S.mode === m) return; S.mode = m; if (why) say(why); syncButtons(); };
+
+  // ---- кнопки
+  const $ = id => document.getElementById(id);
+  const bRc=$('bRc'), bGps=$('bGps'), bObs=$('bObs'), bTake=$('bTake'), bPlay=$('bPlay'), bReset=$('bReset');
+  function syncButtons(){
+    bRc.textContent = S.rc ? 'Выключить пульт' : 'Включить пульт'; bRc.setAttribute('aria-pressed', String(!S.rc));
+    bGps.textContent = S.gpsOn ? 'Заглушить GPS' : 'Вернуть GPS'; bGps.setAttribute('aria-pressed', String(!S.gpsOn));
+    bObs.disabled = !!S.obs || S.mode === 'DONE';
+    bTake.disabled = !S.rc || S.mode === 'MANUAL' || S.mode === 'DONE';
+    bPlay.textContent = S.playing ? 'Пауза' : 'Продолжить';
+  }
+  bRc.onclick = () => {
+    S.rc = !S.rc;
+    if (!S.rc) {
+      S.rcLostT = 0; S.wasManual = S.mode === 'MANUAL';
+      say('Связь с пультом потеряна');
+      if (S.mode === 'MANUAL') setMode('HOLD', 'Автопилот: стоп по потере связи');
+      else if (S.mode === 'AUTO') say('Режим «Авто»: маршрут продолжается');
+    } else { S.rcLostT = null; say('Связь восстановлена — оператор может взять управление'); }
+    syncButtons();
+  };
+  bGps.onclick = () => { S.gpsOn = !S.gpsOn; S.badT = 0; S.goodT = 0; say(S.gpsOn ? 'Сигнал GPS появился, проверяю качество' : 'GPS: сигнал пропал'); syncButtons(); };
+  bObs.onclick = () => { S.obs = { s: Math.min(L - 10, S.s + 150) }; S.obsT = 0; say('Впереди на маршруте появилось препятствие'); syncButtons(); };
+  bTake.onclick = () => { S.hold = null; setMode('MANUAL', 'Оператор взял управление'); };
+  bPlay.onclick = () => { S.playing = !S.playing; syncButtons(); if (S.playing) { last = performance.now(); requestAnimationFrame(loop); } };
+  bReset.onclick = () => { const p = S.playing; reset(); S.playing = p; syncButtons(); draw(); };
+
+  // ---- логика
+  function update(dt){
+    S.t += dt;
+    // пульт
+    if (!S.rc && S.rcLostT !== null) {
+      S.rcLostT += dt;
+      if (S.wasManual && S.rcLostT >= RC_RESUME && S.mode === 'HOLD' && !S.hold) { setMode('AUTO', 'Диспетчер: пульта нет, продолжаю маршрут — еду к точке ' + Math.min(WP.length, wpIndex(S.s) + 1)); S.wasManual = false; }
+    }
+    // GPS
+    if (!S.gpsOn) { S.badT += dt; S.goodT = 0; } else { S.goodT += dt; S.badT = 0; }
+    if (S.nav === 'GPS' && S.badT >= GPS_BAD) { S.nav = 'ODO'; S.drT = 0; say('Диспетчер: навигация по колёсам и компасу, скорость 1 м/с'); }
+    if (S.nav === 'ODO' && S.goodT >= GPS_GOOD) {
+      S.nav = 'GPS'; S.correcting = true; say('Диспетчер: GPS в норме, положение уточнено, скорость 2 м/с');
+      if (S.hold === 'nav') { S.hold = null; setMode('AUTO', 'Диспетчер: навигация восстановлена, еду дальше'); }
+    }
+    if (S.nav === 'ODO') {
+      S.drT += dt;
+      if (S.drT > DR_LIMIT && S.mode === 'AUTO') { S.hold = 'nav'; setMode('HOLD', 'Диспетчер: без GPS слишком долго — стою и жду сигнал'); }
+    }
+    // препятствие
+    if (S.obs) {
+      const d = (S.obs.s - S.s) / PX_PER_M;
+      if (d < 1.05 && d > -0.5 && (S.mode === 'AUTO' || S.mode === 'MANUAL') && S.hold !== 'obs') { S.hold = 'obs'; S.holdPrev = S.mode; setMode('HOLD', 'Дальномер: препятствие в 1 м — стоп'); }
+      S.obsT += dt;
+      if (S.obsT > 6) { S.obs = null; say('Путь свободен'); if (S.hold === 'obs') { S.hold = null; const back = (!S.rc || S.holdPrev === 'AUTO') ? 'AUTO' : 'MANUAL'; setMode(back, back === 'AUTO' ? 'Диспетчер: продолжаю маршрут' : 'Оператор едет дальше'); } syncButtons(); }
+    }
+    // движение
+    const moving = S.mode === 'AUTO' || S.mode === 'MANUAL';
+    const v = (S.nav === 'ODO' ? 1 : 2) * PX_PER_M;
+    if (moving) {
+      S.s += v * dt;
+      if (S.nav === 'ODO') {
+        S.dang += (Math.random() - .5) * 0.6 * dt;
+        const k = 0.05 * v * dt;
+        S.drift.x += Math.cos(S.dang) * k; S.drift.y += Math.sin(S.dang) * k;
+      }
+      if (S.s >= L) { S.s = L; setMode('DONE', 'Задача выполнена: машина у получателя'); }
+    }
+    if (S.correcting) { S.drift.x *= Math.pow(0.02, dt); S.drift.y *= Math.pow(0.02, dt); if (Math.hypot(S.drift.x, S.drift.y) < 0.5) { S.drift = {x:0,y:0}; S.correcting = false; } }
+    if (S.t - S.lastTrail > 0.08 && moving) {
+      const p = at(S.s); S.trail.push({ x:p.x+S.drift.x, y:p.y+S.drift.y, nav:S.nav }); S.lastTrail = S.t;
+      if (S.trail.length > 1600) S.trail.shift();
+    }
+  }
+
+  // ---- статус
+  const set = (id, txt, col) => { $('v'+id).textContent = txt; if (col) $('d'+id).style.background = col; };
+  function status(){
+    const modes = { MANUAL:['Ручной — ведёт оператор', C.ok], AUTO:['Авто — едет по маршруту', C.ok], HOLD:['Стоп', C.stop], DONE:['Задача выполнена', C.ok] };
+    let [mt, mc] = modes[S.mode];
+    if (S.mode === 'HOLD') mt = S.hold === 'obs' ? 'Стоп — препятствие' : S.hold === 'nav' ? 'Стоп — жду GPS' : 'Стоп — нет связи';
+    set('Mode', mt, mc);
+    set('Rc', S.rc ? 'на связи' : 'нет связи', S.rc ? C.ok : C.link);
+    set('Nav', S.nav === 'GPS' ? (S.gpsOn ? 'GPS' : 'GPS пропал, проверяю') : 'колёса + компас, ' + Math.max(0, Math.ceil(DR_LIMIT - S.drT)) + ' с', S.nav === 'GPS' ? (S.gpsOn ? C.ok : C.link) : C.odo);
+    const moving = S.mode === 'AUTO' || S.mode === 'MANUAL';
+    set('Speed', moving ? (S.nav === 'ODO' ? '1,0 м/с' : '2,0 м/с') : '0 м/с');
+    set('Err', '±' + (Math.hypot(S.drift.x, S.drift.y) / PX_PER_M + (S.nav === 'GPS' ? 0.5 : 0.8)).toFixed(1).replace('.', ',') + ' м');
+    set('Prog', 'пройдено ' + wpIndex(S.s) + ' из ' + WP.length + ' точек, ' + Math.round(S.s / L * 100) + ' %');
+  }
+
+  // ---- рисование
+  function rr(x,y,w,h,r){ ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x,y,w,h,r) : ctx.rect(x,y,w,h); }
+  function draw(){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle = C.ground; ctx.fillRect(0,0,W,H);
+    // дорожки
+    ctx.strokeStyle = C.path; ctx.lineWidth = 34; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); WP.forEach(([x,y],i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(420,330); ctx.lineTo(420,540); ctx.moveTo(90,330); ctx.lineTo(420,330); ctx.moveTo(700,330); ctx.lineTo(700,540); ctx.stroke();
+    // дома
+    ctx.fillStyle = C.block; blocks.forEach(b => { rr(...b, 8); ctx.fill(); });
+    // геозона
+    ctx.setLineDash([8,7]); ctx.strokeStyle = C.fence; ctx.lineWidth = 2; ctx.strokeRect(36,24,928,552); ctx.setLineDash([]);
+    // маршрут
+    ctx.strokeStyle = C.mark; ctx.lineWidth = 4; ctx.setLineDash([14,10]);
+    ctx.beginPath(); WP.forEach(([x,y],i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y)); ctx.stroke(); ctx.setLineDash([]);
+    // след
+    ctx.lineWidth = 3;
+    for (let i = 1; i < S.trail.length; i++) { const a=S.trail[i-1], b=S.trail[i]; ctx.strokeStyle = b.nav === 'ODO' ? C.odo : C.ok; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+    // точки маршрута
+    ctx.font = '600 13px Onest, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    WP.forEach(([x,y],i) => {
+      const done = i < wpIndex(S.s);
+      ctx.fillStyle = done ? C.ink : C.surface; ctx.strokeStyle = C.ink; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x,y,12,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = done ? C.paper : C.ink; ctx.fillText(String(i+1), x, y+0.5);
+    });
+    ctx.font = '600 15px Onest, system-ui, sans-serif'; ctx.fillStyle = C.ink; ctx.textAlign = 'left';
+    ctx.fillText('Склад', 112, 548); ctx.textAlign = 'right'; ctx.fillText('Получатель', 578, 491);
+    // препятствие
+    if (S.obs) { const p = at(S.obs.s); ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a); ctx.fillStyle = C.stop; rr(-9,-15,18,30,4); ctx.fill(); ctx.restore(); }
+    // машина
+    const p = at(S.s), cx = p.x + S.drift.x, cy = p.y + S.drift.y;
+    const err = Math.hypot(S.drift.x, S.drift.y);
+    if (S.nav === 'ODO' || err > 2) {
+      ctx.fillStyle = C.odo; ctx.globalAlpha = .16; ctx.beginPath(); ctx.arc(cx,cy, 14 + err*1.4, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+      if (err > 6) { ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a); ctx.setLineDash([4,4]); ctx.strokeStyle = C.odo; ctx.lineWidth = 2; rr(-15,-9,30,18,4); ctx.stroke(); ctx.restore(); }
+    }
+    const col = S.mode === 'HOLD' ? C.stop : (!S.rc ? C.link : (S.nav === 'ODO' ? C.odo : C.ok));
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(p.a);
+    if (S.mode === 'AUTO' || S.mode === 'MANUAL' || S.hold === 'obs') { ctx.fillStyle = C.mark; ctx.globalAlpha = .35; ctx.beginPath(); ctx.moveTo(16,0); ctx.lineTo(16+34,-12); ctx.lineTo(16+34,12); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.fillStyle = C.ink; [[-12,-12],[6,-12],[-12,8],[6,8]].forEach(([x,y]) => { rr(x,y,8,4,1.5); ctx.fill(); });
+    ctx.fillStyle = col; rr(-17,-9,34,18,5); ctx.fill();
+    ctx.fillStyle = C.paper; rr(6,-5,7,10,2); ctx.fill();
+    ctx.restore();
+  }
+
+  let last = performance.now();
+  function loop(now){
+    if (!S.playing) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    update(dt); draw(); status();
+    requestAnimationFrame(loop);
+  }
+
+  reset();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { S.playing = false; syncButtons(); }
+  draw(); status();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
